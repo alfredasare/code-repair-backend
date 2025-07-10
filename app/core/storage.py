@@ -76,4 +76,20 @@ class UserStorage(MongoStorage):
         return self.find_one({"username": username})
 
 
+class CriteriaStorage(MongoStorage):
+    def __init__(self):
+        super().__init__("criteria")
+    
+    def _setup_indexes(self):
+        indexes = [
+            IndexModel([("name", 1)], unique=True),
+            IndexModel([("date_created", -1)]),
+        ]
+        self.collection.create_indexes(indexes)
+    
+    def find_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        return self.find_one({"name": name})
+
+
 user_storage = UserStorage()
+criteria_storage = CriteriaStorage()
