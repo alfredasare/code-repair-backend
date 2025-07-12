@@ -91,5 +91,49 @@ class CriteriaStorage(MongoStorage):
         return self.find_one({"name": name})
 
 
+class PatternStorage(MongoStorage):
+    def __init__(self):
+        super().__init__("patterns")
+    
+    def _setup_indexes(self):
+        indexes = [
+            IndexModel([("pattern_id", 1)], unique=True),
+            IndexModel([("name", 1)]),
+            IndexModel([("date_created", -1)]),
+        ]
+        self.collection.create_indexes(indexes)
+    
+    def find_by_pattern_id(self, pattern_id: str) -> Optional[Dict[str, Any]]:
+        return self.find_one({"pattern_id": pattern_id})
+    
+    def find_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        return self.find_one({"name": name})
+
+
+class ModelStorage(MongoStorage):
+    def __init__(self):
+        super().__init__("models")
+    
+    def _setup_indexes(self):
+        indexes = [
+            IndexModel([("model_id", 1)], unique=True),
+            IndexModel([("name", 1)]),
+            IndexModel([("type", 1)]),
+            IndexModel([("date_created", -1)]),
+        ]
+        self.collection.create_indexes(indexes)
+    
+    def find_by_model_id(self, model_id: str) -> Optional[Dict[str, Any]]:
+        return self.find_one({"model_id": model_id})
+    
+    def find_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        return self.find_one({"name": name})
+    
+    def find_by_type(self, model_type: str) -> List[Dict[str, Any]]:
+        return self.find_many({"type": model_type})
+
+
 user_storage = UserStorage()
 criteria_storage = CriteriaStorage()
+pattern_storage = PatternStorage()
+model_storage = ModelStorage()
