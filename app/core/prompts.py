@@ -1,13 +1,3 @@
-"""
-Prompts for LLM-based code repair and assessment.
-
-This module contains all the prompts used for:
-- Code repair recommendation generation
-- Code fix generation  
-- Code evaluation and scoring
-- Pattern-specific contexts
-"""
-
 from langchain.prompts import ChatPromptTemplate
 
 # ─── CODE REPAIR RECOMMENDATION PROMPTS ─────────────────────────────────────────
@@ -93,12 +83,6 @@ FIX_GENERATION_MESSAGES = [
 
 CODE_FIX_GENERATION_PROMPT = ChatPromptTemplate.from_messages(FIX_GENERATION_MESSAGES)
 
-# ─── EVALUATION AND SCORING PROMPTS ─────────────────────────────────────────────
-
-CODE_EVALUATION_PROMPT = """
-# TODO: Add prompt for evaluating code fixes
-"""
-
 # ─── HELPER FUNCTIONS ───────────────────────────────────────────────────────────
 
 def get_repair_recommendation_prompt(pattern_id: str, context: str, vulnerable_code: str) -> str:
@@ -140,19 +124,3 @@ def get_code_fix_prompt(cwe_id: str, cve_id: str, vulnerable_code: str, recommen
         "vulnerable_code": vulnerable_code,
         "recommendation": recommendation
     })
-
-
-def get_evaluation_prompt(original_code: str, fixed_code: str, criteria: list) -> str:
-    """
-    Get the complete prompt for code evaluation.
-    
-    Args:
-        original_code: The original vulnerable code
-        fixed_code: The fixed code to evaluate
-        criteria: List of evaluation criteria
-        
-    Returns:
-        Complete formatted prompt for LLM
-    """
-    # TODO: Implement prompt formatting logic
-    pass
