@@ -189,8 +189,310 @@ class KnnGraphHandler(QueryHandler):
 class PagerankGraphHandler(QueryHandler):
     def execute_query(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
         self.validate_base_params(cwe_id, cve_id)
-        # TODO: Implement PageRank graph query logic
-        pass
+        
+        # Extract optional parameters with defaults
+        hops = kwargs.get('hops', 3)
+        top_k = kwargs.get('top_k', 5)
+        score_prop = kwargs.get('score_prop', 'pr_weighted_shap')
+        
+        # Query the graph using PageRank approach
+        raw_results = self._query_graph(cwe_id, cve_id, hops, top_k, score_prop)
+        
+        # Format the results
+        formatted_results = self._build_context(raw_results)
+        
+        return {
+            "raw_results": raw_results,
+            "formatted_results": formatted_results
+        }
+    
+    def _query_graph(self, cwe_id: str, cve_id: str, hops: int, top_k: int, score_prop: str):
+        """Execute PageRank-based retrieval for vulnerability examples"""
+        graph = neo4j_graph.get_graph()
+        
+        # If specific CVE provided, try to find it first
+        if cve_id:
+            specific_cve_result = graph.query(
+                "MATCH (c:CWE {id:$cid})-[:HAS_VULNERABILITY]->(v:CVE {id:$vid}) RETURN v",
+                {"cid": cwe_id, "vid": cve_id}
+            )
+            if specific_cve_result:
+                rank_map = self._get_influential_rank_map(graph, score_prop)
+                return [self._query_cwe_details(graph, cwe_id, score_prop, rank_map, override_cve_id=cve_id)]
+        
+        # Otherwise, get CWE and similar CWEs ordered by PageRank
+        return self._query_only_cwe_ordered(graph, cwe_id, hops, top_k, score_prop)
+    
+    def _get_influential_rank_map(self, graph, score_prop: str):
+        """Build a map from CWE id -> global rank based on descending score_prop"""
+        query = f"""
+        MATCH (n:CWE)
+        WHERE n.{score_prop} IS NOT NULL
+        RETURN n.id AS id, n.{score_prop} AS score
+        ORDER BY score DESC
+        """
+        result = graph.query(query)
+        rank_map = {}
+        for i, rec in enumerate(result, start=1):
+            rank_map[rec["id"]] = i
+        return rank_map
+    
+    def _query_cwe_details(self, graph, cwe_id: str, score_prop: str, rank_map: dict, override_cve_id: str = None):
+        """Query CWE details with CVE and code example"""
+        # 1) CWE node with dynamic score_prop
+        cwe_result = graph.query(
+            f"""
+            MATCH (c:CWE {{id:$id}})
+            RETURN c {{ .id, .name, .description,
+                        .extended_description,
+                        .potential_mitigation,
+                        .{score_prop} }} AS cwe
+            """,
+            {"id": cwe_id}
+        )
+        if not cwe_result:
+            return None
+        cwe = cwe_result[0]["cwe"]
+        influential_rank = rank_map.get(cwe["id"])
+
+        # 2) CVE (override or top by score_prop)
+        if override_cve_id:
+            cve_query = f"""
+            MATCH (c:CWE {{id:$id}})-[:HAS_VULNERABILITY]->(v:CVE {{id:$vid}})
+            RETURN v {{ .id, .description, .{score_prop} }} AS cve
+            """
+            params = {"id": cwe_id, "vid": override_cve_id}
+        else:
+            cve_query = f"""
+            MATCH (c:CWE {{id:$id}})-[:HAS_VULNERABILITY]->(v:CVE)
+            RETURN v {{ .id, .description, .{score_prop} }} AS cve
+            ORDER BY v.{score_prop} DESC
+            LIMIT 1
+            """
+            params = {"id": cwe_id}
+
+        cve_result = graph.query(cve_query, params)
+        if not cve_result:
+            return None
+        cve = cve_result[0]["cve"]
+
+        # 3) One code example
+        ce_result = graph.query(
+            f"""
+            MATCH (v:CVE {{id:$vid}})-[:HAS_CODE_EXAMPLE]->(ce)
+            RETURN ce {{ .id, .code_before, .code_after, .{score_prop} }} AS ce
+            ORDER BY ce.id ASC
+            LIMIT 1
+            """,
+            {"vid": cve["id"]}
+        )
+        if not ce_result:
+            return None
+        ce = ce_result[0]["ce"]
+
+        return {
+            "id": cwe["id"],
+            "name": cwe["name"],
+            "description": cwe.get("description"),
+            "extended_description": cwe.get("extended_description"),
+            "potential_mitigation": cwe.get("potential_mitigation"),
+            score_prop: cwe[score_prop],
+            "influential_rank": influential_rank,
+            "related_cve": {
+                "id": cve["id"],
+                "description": cve.get("description"),
+                score_prop: cve[score_prop]
+            },
+            "code_example": {
+                "id": ce["id"],
+                score_prop: ce[score_prop],
+                "code_before": self._clean_code(ce.get("code_before")),
+                "code_after": self._clean_code(ce.get("code_after"))
+            },
+            "relationship": ["CWE —HAS_VULNERABILITY—> CVE —HAS_CODE_EXAMPLE—> CodeExample"]
+        }
+    
+    def _find_similar_cwes_with_path(self, graph, seed_id: str, hops: int, top_k: int, score_prop: str):
+        """Find similar CWEs with path information"""
+        rel_types = "HAS_PARENT|PEER_WITH|RELATES_TO"
+        
+        query = f"""
+        MATCH p=(seed:CWE {{id:$id}})-[:{rel_types}*1..{hops}]-(other:CWE)
+        WHERE other.id <> $id AND other.{score_prop} IS NOT NULL
+        WITH other.id AS cid, other.{score_prop} AS pr, COLLECT(DISTINCT p) AS paths
+        ORDER BY pr DESC
+        LIMIT $k
+        RETURN cid, pr, paths
+        """
+        
+        results = []
+        query_result = graph.query(query, {"id": seed_id, "k": top_k})
+        
+        for rec in query_result:
+            cid = rec["cid"]
+            path_info = []
+            for p in rec["paths"]:
+                nodes = [n["id"] for n in p.nodes]
+                rels = [r.type for r in p.relationships]
+                path_info.append((nodes, rels, rec["pr"]))
+            results.append((cid, path_info))
+        
+        return results
+    
+    def _build_arrow_strings_for_paths(self, path_info_list):
+        """Build arrow notation for relationship paths"""
+        arrows = []
+        final_cve_code_path = " —HAS_VULNERABILITY—> CVE —HAS_CODE_EXAMPLE—> CodeExample"
+        
+        for nodes, rels, _ in path_info_list:
+            s = nodes[0]
+            for i, r in enumerate(rels):
+                s += f" —{r}—> {nodes[i+1]}"
+            s += final_cve_code_path
+            arrows.append(s)
+        
+        return list(set(arrows))
+    
+    def _query_only_cwe_ordered(self, graph, seed_cwe_id: str, hops: int, top_k: int, score_prop: str):
+        """Query CWE and similar CWEs ordered by PageRank"""
+        rank_map = self._get_influential_rank_map(graph, score_prop)
+        results = []
+        
+        # Direct CWE
+        base = self._query_cwe_details(graph, seed_cwe_id, score_prop, rank_map)
+        if base:
+            base["rank"] = 1
+            results.append(base)
+        
+        # Similar CWEs
+        rank = 2
+        for cid, path_info in self._find_similar_cwes_with_path(graph, seed_cwe_id, hops, top_k, score_prop):
+            detail = self._query_cwe_details(graph, cid, score_prop, rank_map)
+            if not detail:
+                continue
+            detail["rank"] = rank
+            detail["relationship"] = self._build_arrow_strings_for_paths(path_info)
+            results.append(detail)
+            rank += 1
+        
+        return results
+    
+    def _clean_code(self, code: str) -> str:
+        """Clean up code strings for display"""
+        import textwrap
+        return textwrap.dedent(code or "").strip()
+    
+    def _build_context(self, results):
+        """Build context string for LLM prompt based on PageRank search results"""
+        import json
+        
+        context_parts = []
+        
+        if not results:
+            return "No relevant vulnerability examples found through PageRank traversal."
+        
+        # Process each result
+        for i, result in enumerate(results, 1):
+            # Example header with rank and basic info
+            rank = result.get('rank', i)
+            cwe_id = result.get('id', 'N/A')
+            cwe_name = result.get('name', 'N/A')
+            
+            context_parts.append(f"EXAMPLE {i} (Rank: {rank})")
+            context_parts.append("=" * 40)
+            context_parts.append("")
+            
+            # CWE Information
+            context_parts.append("CWE INFORMATION:")
+            context_parts.append(f"  ID: {cwe_id}")
+            context_parts.append(f"  Name: {cwe_name}")
+            
+            description = result.get('description', 'N/A')
+            if description and description != 'N/A':
+                wrapped_desc = description[:500] + "..." if len(description) > 500 else description
+                context_parts.append(f"  Description: {wrapped_desc}")
+            
+            extended_desc = result.get('extended_description')
+            if extended_desc and extended_desc.strip():
+                wrapped_ext_desc = extended_desc[:300] + "..." if len(extended_desc) > 300 else extended_desc
+                context_parts.append(f"  Extended Description: {wrapped_ext_desc}")
+            
+            context_parts.append("")
+            
+            # CVE Information
+            related_cve = result.get('related_cve')
+            if related_cve:
+                context_parts.append("RELATED CVE INFORMATION:")
+                context_parts.append(f"  CVE ID: {related_cve.get('id', 'N/A')}")
+                
+                cve_description = related_cve.get('description', 'N/A')
+                if cve_description and cve_description != 'N/A':
+                    wrapped_cve_desc = cve_description[:400] + "..." if len(cve_description) > 400 else cve_description
+                    context_parts.append(f"  CVE Description: {wrapped_cve_desc}")
+                
+                context_parts.append("")
+            
+            # Code Example
+            code_example = result.get('code_example')
+            if code_example:
+                context_parts.append("CODE EXAMPLE:")
+                context_parts.append("")
+                
+                # Code Before Fix
+                code_before = code_example.get('code_before', '# No code provided')
+                context_parts.append("  Vulnerable Code (Before Fix):")
+                context_parts.append("  ```")
+                for line in code_before.split('\n'):
+                    context_parts.append(f"  {line}")
+                context_parts.append("  ```")
+                context_parts.append("")
+                
+                # Code After Fix
+                code_after = code_example.get('code_after', '# No code provided')
+                context_parts.append("  Fixed Code (After Fix):")
+                context_parts.append("  ```")
+                for line in code_after.split('\n'):
+                    context_parts.append(f"  {line}")
+                context_parts.append("  ```")
+                context_parts.append("")
+            
+            # Relationship Information
+            relationships = result.get('relationship', [])
+            if relationships:
+                context_parts.append("RELATIONSHIP PATH:")
+                for rel in relationships:
+                    context_parts.append(f"  {rel}")
+                context_parts.append("")
+            
+            # Mitigation Information (if available)
+            potential_mitigation = result.get('potential_mitigation')
+            if potential_mitigation and potential_mitigation.strip():
+                context_parts.append("POTENTIAL MITIGATION STRATEGIES:")
+                mitigation_parts = potential_mitigation.split("::")
+                for part in mitigation_parts[:3]:  # Show first 3 mitigation strategies
+                    if part.strip():
+                        clean_part = part.replace("PHASE:", "\n  Phase: ").replace("STRATEGY:", "\n  Strategy: ").replace("DESCRIPTION:", "\n  Description: ")
+                        context_parts.append(f"  {clean_part.strip()}")
+                context_parts.append("")
+            
+            # Separator between examples
+            if i < len(results):
+                context_parts.append("-" * 80)
+                context_parts.append("")
+        
+        # Footer with guidance
+        context_parts.append("")
+        context_parts.append("GUIDANCE FOR VULNERABILITY REPAIR:")
+        context_parts.append("-" * 40)
+        context_parts.append("Study the code examples above to understand:")
+        context_parts.append("• Common vulnerability patterns and their manifestations")
+        context_parts.append("• Specific fixes applied to address similar weaknesses")
+        context_parts.append("• Relationship patterns between different vulnerability types")
+        context_parts.append("• Mitigation strategies that can be applied")
+        context_parts.append("")
+        context_parts.append("Use these examples to inform your recommended solution for the target vulnerability.")
+        
+        return "\n".join(context_parts)
 
 
 class MetapathGraphHandler(QueryHandler):
