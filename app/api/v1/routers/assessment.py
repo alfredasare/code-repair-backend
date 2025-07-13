@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends
+from datetime import datetime
 from app.schemas.assessment import (
     AssessmentCreate, AssessmentUpdate, AssessmentResponse, AssessmentListResponse,
     CodeRepairRecommendationRequest, CodeRepairRecommendationResponse,
@@ -10,6 +11,7 @@ from app.schemas.user import UserResponse
 from app.core.authentication.auth_middleware import get_current_user
 from app.core.prompts import get_repair_recommendation_prompt, get_code_fix_prompt
 from app.core.llm import LLMFactory
+from app.core.storage import assessment_storage
 router = APIRouter()
 
 
@@ -164,6 +166,31 @@ async def store_assessment_results(
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Store all assessment results (recommendation, fix, scores)"""
-    # TODO: Implement result storage logic
-    # This will update the assessment with all generated results
-    pass
+    try:
+        # Create assessment data
+        assessment_data = {
+            "user_id": request.user_id,
+            "vulnerable_code": request.vulnerable_code,
+            "repair_recommendation": request.recommendation,
+            "model_id": request.model_id,
+            "evaluation_scores": request.scores,
+        }
+        
+        # Store in MongoDB
+        assessment_id = assessment_storage.create(assessment_data)
+        
+        # Prepare stored fields list
+        stored_fields = ["user_id", "vulnerable_code", "repair_recommendation", "model_id", "evaluation_scores"]
+        
+        return StoreResultsResponse(
+            assessment_id=assessment_id,
+            stored_fields=stored_fields,
+            message="Assessment results stored successfully",
+            stored_at=datetime.utcnow()
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to store assessment results: {str(e)}"
+        )

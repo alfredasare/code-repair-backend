@@ -133,7 +133,43 @@ class ModelStorage(MongoStorage):
         return self.find_many({"type": model_type})
 
 
+class AssessmentStorage(MongoStorage):
+    def __init__(self):
+        super().__init__("assessments")
+    
+    def _setup_indexes(self):
+        indexes = [
+            IndexModel([("user_id", 1)]),
+            IndexModel([("cwe_id", 1)]),
+            IndexModel([("cve_id", 1)]),
+            IndexModel([("pattern_id", 1)]),
+            IndexModel([("date_created", -1)]),
+        ]
+        self.collection.create_indexes(indexes)
+    
+    def find_by_user_id(self, user_id: str) -> List[Dict[str, Any]]:
+        return self.find_many({"user_id": user_id})
+    
+    def store_results(self, assessment_id: str, scores: Dict[str, Any], 
+                     recommendation: Optional[str] = None, vulnerable_code: Optional[str] = None, 
+                     model_id: Optional[str] = None) -> bool:
+        update_data = {
+            "evaluation_scores": scores,
+            "date_modified": datetime.utcnow()
+        }
+        
+        if recommendation:
+            update_data["repair_recommendation"] = recommendation
+        if vulnerable_code:
+            update_data["vulnerable_code"] = vulnerable_code
+        if model_id:
+            update_data["model_id"] = model_id
+            
+        return self.update_by_id(assessment_id, update_data)
+
+
 user_storage = UserStorage()
 criteria_storage = CriteriaStorage()
 pattern_storage = PatternStorage()
 model_storage = ModelStorage()
+assessment_storage = AssessmentStorage()

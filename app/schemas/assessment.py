@@ -92,10 +92,11 @@ class EvaluationScoresResponse(BaseModel):
 
 # Store Results Models
 class StoreResultsRequest(BaseModel):
-    assessment_id: str = Field(..., description="The assessment ID to store results for")
-    repair_recommendation: Optional[str] = Field(None, description="The repair recommendation to store")
-    code_fix: Optional[str] = Field(None, description="The code fix to store")
-    evaluation_scores: Optional[Dict[str, Any]] = Field(None, description="The evaluation scores to store")
+    scores: Dict[str, Any] = Field(..., description="The evaluation scores to store")
+    user_id: str = Field(..., description="The user ID")
+    recommendation: str = Field(..., description="The repair recommendation")
+    vulnerable_code: str = Field(..., description="The vulnerable code")
+    model_id: str = Field(..., description="The model ID used for generation")
 
 
 class StoreResultsResponse(BaseModel):
