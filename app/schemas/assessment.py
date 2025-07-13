@@ -69,24 +69,25 @@ class CodeFixResponse(BaseModel):
 
 # Evaluation Scores Models
 class EvaluationScoresRequest(BaseModel):
-    assessment_id: str = Field(..., description="The assessment ID to evaluate")
-    fixed_code: str = Field(..., description="The fixed code to evaluate")
-    criteria: Optional[List[str]] = Field(default=None, description="Specific criteria to evaluate")
+    vulnerable_code: str = Field(..., description="The vulnerable code")
+    cwe_id: str = Field(..., description="The CWE identifier")
+    cve_id: str = Field(..., description="The CVE identifier")
+    recommendation: str = Field(..., description="The recommendation to evaluate")
+    retrieved_context: str = Field(..., description="The context retrieved from pattern matching")
+    model: str = Field(default="gpt-4o-mini", description="The model to use for evaluation")
 
 
 class EvaluationScore(BaseModel):
     criterion: str
     score: float
-    max_score: float
-    explanation: str
 
 
 class EvaluationScoresResponse(BaseModel):
-    assessment_id: str
-    overall_score: float
-    max_overall_score: float
-    scores: List[EvaluationScore]
-    evaluated_at: datetime
+    recommendation: str
+    vulnerable_code: str
+    cve_id: str
+    cwe_id: str
+    scores: Dict[str, float]
 
 
 # Store Results Models

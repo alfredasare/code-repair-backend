@@ -51,5 +51,17 @@ class Neo4jLangchain:
         return self.graph
 
 
-neo4j_driver = Neo4jDriver()
-neo4j_graph = Neo4jLangchain()
+neo4j_driver: Optional[Neo4jDriver] = None
+neo4j_graph: Optional[Neo4jLangchain] = None
+
+def get_neo4j_driver() -> Neo4jDriver:
+    global neo4j_driver
+    if not neo4j_driver:
+        neo4j_driver = Neo4jDriver()
+    return neo4j_driver
+
+def get_neo4j_graph() -> Neo4jLangchain:
+    global neo4j_graph
+    if not neo4j_graph:
+        neo4j_graph = Neo4jLangchain()
+    return neo4j_graph

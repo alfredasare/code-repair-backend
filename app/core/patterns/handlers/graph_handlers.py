@@ -1,6 +1,6 @@
 from typing import Any, Dict
 from ..base import QueryHandler
-from app.core.neo4j_client import neo4j_graph
+from app.core.neo4j_client import get_neo4j_graph
 
 
 class KnnGraphHandler(QueryHandler):
@@ -25,7 +25,7 @@ class KnnGraphHandler(QueryHandler):
     
     def _query_graph(self, cwe_id: str, cve_id: str, max_hops: int, alpha: float, top_k: int):
         """Query the Neo4j graph using KNN approach"""
-        graph = neo4j_graph.get_graph()
+        graph = get_neo4j_graph().get_graph()
         
         return graph.query(
             """

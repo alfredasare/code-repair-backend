@@ -130,9 +130,32 @@ async def evaluate_code_fix(
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Evaluate a code fix based on predefined criteria"""
-    # TODO: Implement evaluation logic
-    # This will score the fixed code against various criteria
-    pass
+    try:
+        from app.core.evaluation import evaluate_recommendation
+        
+        # Evaluate the recommendation using deepeval
+        scores = evaluate_recommendation(
+            vulnerable_code=request.vulnerable_code,
+            cwe_id=request.cwe_id,
+            cve_id=request.cve_id,
+            recommendation=request.recommendation,
+            retrieved_context=request.retrieved_context,
+            model=request.model
+        )
+        
+        return EvaluationScoresResponse(
+            recommendation=request.recommendation,
+            vulnerable_code=request.vulnerable_code,
+            cve_id=request.cve_id,
+            cwe_id=request.cwe_id,
+            scores=scores
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to evaluate code fix: {str(e)}"
+        )
 
 
 @router.post("/store-results", response_model=StoreResultsResponse)
