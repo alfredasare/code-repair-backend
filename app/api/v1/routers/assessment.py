@@ -22,43 +22,140 @@ router = APIRouter()
 @router.get("/", response_model=AssessmentListResponse)
 async def list_assessments(current_user: UserResponse = Depends(get_current_user)):
     """List all assessments for the current user"""
-    # TODO: Implement assessment listing logic
-    pass
+    try:
+        assessments = assessment_storage.find_by_user_id(current_user.id)
+        return AssessmentListResponse(
+            assessments=assessments,
+            total=len(assessments)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list assessments: {str(e)}"
+        )
 
 
-@router.get("/{assessment_id}", response_model=AssessmentResponse)
+@router.get("/{assessment_id}")
 async def get_assessment(assessment_id: str, current_user: UserResponse = Depends(get_current_user)):
     """Get a specific assessment by ID"""
-    # TODO: Implement get assessment logic
-    pass
+    try:
+        assessment = assessment_storage.find_by_id(assessment_id)
+        if not assessment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assessment not found"
+            )
+        
+        if assessment["user_id"] != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        return assessment
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get assessment: {str(e)}"
+        )
 
 
-@router.post("/", response_model=AssessmentResponse)
+@router.post("/")
 async def create_assessment(
     assessment_data: AssessmentCreate,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Create a new assessment"""
-    # TODO: Implement assessment creation logic
-    pass
+    try:
+        data = assessment_data.dict()
+        data["user_id"] = current_user.id
+        
+        assessment_id = assessment_storage.create(data)
+        created_assessment = assessment_storage.find_by_id(assessment_id)
+        
+        return created_assessment
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create assessment: {str(e)}"
+        )
 
 
-@router.put("/{assessment_id}", response_model=AssessmentResponse)
+@router.put("/{assessment_id}")
 async def update_assessment(
     assessment_id: str,
     assessment_data: AssessmentUpdate,
     current_user: UserResponse = Depends(get_current_user)
 ):
     """Update an existing assessment"""
-    # TODO: Implement assessment update logic
-    pass
+    try:
+        assessment = assessment_storage.find_by_id(assessment_id)
+        if not assessment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assessment not found"
+            )
+        
+        if assessment["user_id"] != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        update_data = assessment_data.dict(exclude_unset=True)
+        success = assessment_storage.update_by_id(assessment_id, update_data)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update assessment"
+            )
+        
+        updated_assessment = assessment_storage.find_by_id(assessment_id)
+        return updated_assessment
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update assessment: {str(e)}"
+        )
 
 
 @router.delete("/{assessment_id}")
 async def delete_assessment(assessment_id: str, current_user: UserResponse = Depends(get_current_user)):
     """Delete an assessment"""
-    # TODO: Implement assessment deletion logic
-    pass
+    try:
+        assessment = assessment_storage.find_by_id(assessment_id)
+        if not assessment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assessment not found"
+            )
+        
+        if assessment["user_id"] != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+        
+        success = assessment_storage.delete_by_id(assessment_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete assessment"
+            )
+        
+        return {"message": "Assessment deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete assessment: {str(e)}"
+        )
 
 
 # ─── MAIN ASSESSMENT ENDPOINTS ─────────────────────────────────────────────────
@@ -182,23 +279,26 @@ async def store_assessment_results(
         # Create assessment data
         assessment_data = {
             "user_id": current_user.id,
+            "cwe_id": request.cwe_id,
+            "cve_id": request.cve_id,
             "vulnerable_code": request.vulnerable_code,
-            "repair_recommendation": request.recommendation,
+            "fixed_code": request.fixed_code,
+            "recommendation": request.recommendation,
             "model_id": request.model_id,
             "evaluation_scores": request.scores,
         }
         
         # Store in MongoDB
         assessment_id = assessment_storage.create(assessment_data)
-        
+
         # Prepare stored fields list
-        stored_fields = ["user_id", "vulnerable_code", "repair_recommendation", "model_id", "evaluation_scores"]
+        stored_fields = ["user_id", "cwe_id", "cve_id", "vulnerable_code", "recommendation", "model_id", "evaluation_scores", "fixed_code"]
         
         return StoreResultsResponse(
             assessment_id=assessment_id,
             stored_fields=stored_fields,
             message="Assessment results stored successfully",
-            stored_at=datetime.utcnow()
+            stored_at=datetime.now()
         )
         
     except Exception as e:

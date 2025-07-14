@@ -22,18 +22,16 @@ class AssessmentUpdate(BaseModel):
 
 class AssessmentResponse(BaseModel):
     id: str
-    vulnerable_code: str
-    pattern_id: str
-    cwe_id: str
-    cve_id: str
-    additional_params: Dict[str, Any]
-    description: Optional[str]
     user_id: str
-    date_created: datetime
-    date_modified: datetime
-    repair_recommendation: Optional[str] = None
-    code_fix: Optional[str] = None
-    evaluation_scores: Optional[Dict[str, Any]] = None
+    evaluation_scores: Dict[str, Any] = Field(..., description="The evaluation scores to store")
+    recommendation: str = Field(..., description="The repair recommendation")
+    vulnerable_code: str = Field(..., description="The vulnerable code")
+    fixed_code: str = Field(..., description="The fixed code")
+    cwe_id: str = Field(..., description="The CWE identifier")
+    cve_id: str = Field(..., description="The CVE identifier")
+    model_id: str = Field(..., description="The model ID used for generation")
+    date_created: datetime = Field(..., description="The date the assessment was created")
+    date_modified: datetime = Field(..., description="The date the assessment was last modified")
 
 
 class AssessmentListResponse(BaseModel):
@@ -97,6 +95,9 @@ class StoreResultsRequest(BaseModel):
     scores: Dict[str, Any] = Field(..., description="The evaluation scores to store")
     recommendation: str = Field(..., description="The repair recommendation")
     vulnerable_code: str = Field(..., description="The vulnerable code")
+    fixed_code: str = Field(..., description="The fixed code")
+    cwe_id: str = Field(..., description="The CWE identifier")
+    cve_id: str = Field(..., description="The CVE identifier")
     model_id: str = Field(..., description="The model ID used for generation")
 
 
