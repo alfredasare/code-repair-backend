@@ -12,6 +12,8 @@ from app.core.authentication.auth_middleware import get_current_user
 from app.core.prompts import get_repair_recommendation_prompt, get_code_fix_prompt
 from app.core.llm import LLMFactory
 from app.core.storage import assessment_storage
+from app.core.evaluation import evaluate_recommendation
+
 router = APIRouter()
 
 
@@ -69,10 +71,15 @@ async def generate_code_repair_recommendation(
     """Generate a code repair recommendation for an assessment"""
     try:
         # Get the LLM instance
-        llm = LLMFactory.create_llm(request.model_id)
+        llm = LLMFactory.create_llm(model_type=request.model_type, model_id=request.model_id)
         
         # Prepare the prompt with request data
-        prompt = get_repair_recommendation_prompt(request.cwe_id, request.cve_id, request.vulnerable_code, request.retrieved_context)
+        prompt = get_repair_recommendation_prompt(
+            cwe_id=request.cwe_id, 
+            cve_id=request.cve_id, 
+            retrieved_context=request.retrieved_context, 
+            vulnerable_code=request.vulnerable_code
+        )
         
         # Generate the recommendation using LLM
         result = llm.invoke(prompt)
@@ -99,14 +106,14 @@ async def generate_code_fix(
     """Generate a code fix for an assessment"""
     try:
         # Get the LLM instance
-        llm = LLMFactory.create_llm(request.model_id)
+        llm = LLMFactory.create_llm(model_type=request.model_type, model_id=request.model_id)
         
         # Prepare the prompt with request data
         prompt = get_code_fix_prompt(
-            request.cwe_id, 
-            request.cve_id, 
-            request.vulnerable_code, 
-            request.recommendation
+            cwe_id=request.cwe_id, 
+            cve_id=request.cve_id, 
+            vulnerable_code=request.vulnerable_code, 
+            recommendation=request.recommendation
         )
         
         # Generate the fix using LLM
@@ -133,17 +140,22 @@ async def evaluate_code_fix(
 ):
     """Evaluate a code fix based on predefined criteria"""
     try:
-        from app.core.evaluation import evaluate_recommendation
+        import asyncio
+        import concurrent.futures
         
-        # Evaluate the recommendation using deepeval
-        scores = evaluate_recommendation(
-            vulnerable_code=request.vulnerable_code,
-            cwe_id=request.cwe_id,
-            cve_id=request.cve_id,
-            recommendation=request.recommendation,
-            retrieved_context=request.retrieved_context,
-            model=request.model
-        )
+        # Run evaluation in a thread pool to avoid event loop conflicts
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            scores = await loop.run_in_executor(
+                executor,
+                evaluate_recommendation,
+                request.vulnerable_code,
+                request.cwe_id,
+                request.cve_id,
+                request.recommendation,
+                request.retrieved_context,
+                request.model
+            )
         
         return EvaluationScoresResponse(
             recommendation=request.recommendation,
@@ -169,7 +181,7 @@ async def store_assessment_results(
     try:
         # Create assessment data
         assessment_data = {
-            "user_id": request.user_id,
+            "user_id": current_user.id,
             "vulnerable_code": request.vulnerable_code,
             "repair_recommendation": request.recommendation,
             "model_id": request.model_id,

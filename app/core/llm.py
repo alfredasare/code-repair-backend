@@ -7,8 +7,8 @@ from app.core.config import settings
 class LLMFactory:
     @staticmethod
     def create_llm(
-        model_type: str,
-        model_id: str,
+        model_type: str = "openai",
+        model_id: str = "gpt-4o-mini",
         temperature: float = 0,
         max_tokens: Optional[int] = None,
         timeout: Optional[int] = None,
@@ -28,7 +28,7 @@ class LLMFactory:
                 model=model_id,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                reasoning_format="parsed",
+                # reasoning_format="parsed",
                 timeout=timeout,
                 max_retries=max_retries,
                 api_key=settings.groq_api_key

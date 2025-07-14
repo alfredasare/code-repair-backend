@@ -66,8 +66,9 @@ class KnnGraphHandler(QueryHandler):
             WHERE cve IS NOT NULL AND ex IS NOT NULL
 
             // Select ONE representative CVE/Example pair per targetCwe
+            // Prioritize the specific CVE if it matches, otherwise pick deterministically
             WITH targetCwe, minHops, shortestPathTypes, score, cve, ex
-            ORDER BY cve.id, ex.id // Deterministic selection
+            ORDER BY CASE WHEN cve.id = $cveId THEN 0 ELSE 1 END, cve.id, ex.id
             WITH targetCwe, minHops, shortestPathTypes, score, head(collect({cve: cve, example: ex})) AS selectedPair
 
             // Order results primarily by the calculated score (DESCENDING - higher score is better)
@@ -128,6 +129,23 @@ class KnnGraphHandler(QueryHandler):
                     context_parts.append(f"  ID: {cwe.get('id', 'N/A')}")
                     context_parts.append(f"  Name: {cwe.get('name', 'N/A')}")
                     context_parts.append(f"  Description: {cwe.get('description', 'N/A')}")
+                    
+                    # Add CVE Info for target CWE
+                    cve = record.get('cve')
+                    if cve:
+                        context_parts.append("  CVE Information:")
+                        context_parts.append(f"    ID: {cve.get('id', 'N/A')}")
+                        context_parts.append(f"    Description: {cve.get('description', 'N/A')}")
+                    
+                    # Add Code Example for target CWE
+                    code_example = record.get('codeExample')
+                    if code_example:
+                        context_parts.append("  Code Example:")
+                        context_parts.append("    Code Before Fix:")
+                        context_parts.append(f"    ```\n{code_example.get('code_before', '# No code provided')}\n    ```")
+                        context_parts.append("    Code After Fix:")
+                        context_parts.append(f"    ```\n{code_example.get('code_after', '# No code provided')}\n    ```")
+                    
                     context_parts.append("-" * 80 + "\n")
                     target_cwe_found = True
                 # Do not add the target CWE item to the related pool
@@ -149,7 +167,7 @@ class KnnGraphHandler(QueryHandler):
 
         # --- 3. Format the Top 3 Related Examples ---
         if top_3_related:
-            context_parts.append("\nLearn from the fixes demonstrated in the related vulnerability examples within the context to inform your recommended solution for the main vulnerable code.")
+            # context_parts.append("\nLearn from the fixes demonstrated in the related vulnerability examples within the context to inform your recommended solution for the main vulnerable code.")
             context_parts.append("\nRelated Vulnerability Examples:")
             context_parts.append("=" * 80 + "\n")
 
@@ -208,7 +226,7 @@ class PagerankGraphHandler(QueryHandler):
     
     def _query_graph(self, cwe_id: str, cve_id: str, hops: int, top_k: int, score_prop: str):
         """Execute PageRank-based retrieval for vulnerability examples"""
-        graph = neo4j_graph.get_graph()
+        graph = get_neo4j_graph().get_graph()
         
         # If specific CVE provided, try to find it first
         if cve_id:
@@ -516,7 +534,7 @@ class MetapathGraphHandler(QueryHandler):
     
     def _query_graph(self, cwe_id: str, cve_id: str, max_results: int, max_per_path: int):
         """Execute meta-path retrieval for vulnerability examples"""
-        graph = neo4j_graph.get_graph()
+        graph = get_neo4j_graph().get_graph()
         all_results = []
         found_cve_ids = set()
         

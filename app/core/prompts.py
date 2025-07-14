@@ -85,23 +85,24 @@ CODE_FIX_GENERATION_PROMPT = ChatPromptTemplate.from_messages(FIX_GENERATION_MES
 
 # ─── HELPER FUNCTIONS ───────────────────────────────────────────────────────────
 
-def get_repair_recommendation_prompt(pattern_id: str, context: str, vulnerable_code: str) -> str:
+def get_repair_recommendation_prompt(cwe_id: str, cve_id: str, retrieved_context: str, vulnerable_code: str) -> str:
     """
     Get the complete prompt for code repair recommendation generation.
     
     Args:
-        pattern_id: The pattern used for context retrieval
-        context: The retrieved context from the pattern
+        cwe_id: The CWE identifier
+        cve_id: The CVE identifier
+        retrieved_context: The retrieved context from the pattern
         vulnerable_code: The vulnerable code to analyze
         
     Returns:
         Complete formatted prompt for LLM
     """
     return CODE_REPAIR_RECOMMENDATION_PROMPT.invoke({
-        "cwe_id": pattern_id,
-        "cve_id": pattern_id,
+        "cwe_id": cwe_id,
+        "cve_id": cve_id,
         "vulnerable_code": vulnerable_code,
-        "retrieved_context": context
+        "retrieved_context": retrieved_context
     })
 
 
