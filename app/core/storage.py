@@ -168,8 +168,24 @@ class AssessmentStorage(MongoStorage):
         return self.update_by_id(assessment_id, update_data)
 
 
+class SettingsStorage(MongoStorage):
+    def __init__(self):
+        super().__init__("settings")
+    
+    def _setup_indexes(self):
+        indexes = [
+            IndexModel([("user_id", 1)], unique=True),
+            IndexModel([("date_created", -1)]),
+        ]
+        self.collection.create_indexes(indexes)
+    
+    def find_by_user_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        return self.find_one({"user_id": user_id})
+
+
 user_storage = UserStorage()
 criteria_storage = CriteriaStorage()
 pattern_storage = PatternStorage()
 model_storage = ModelStorage()
 assessment_storage = AssessmentStorage()
+settings_storage = SettingsStorage()
