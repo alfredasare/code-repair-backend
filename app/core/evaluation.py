@@ -72,7 +72,7 @@ def evaluate_recommendation(
     
     # Get criteria from storage and evaluate against each rubric
     rubrics = get_criteria_as_rubrics()
-    print("*"*100, rubrics)
+
     for rubric in rubrics:
         g_eval = GEval(
             **rubric,
