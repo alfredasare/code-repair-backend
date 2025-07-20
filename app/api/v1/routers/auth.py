@@ -5,6 +5,7 @@ from app.schemas.token import TokenResponse
 from app.schemas.user import UserResponse
 from app.core.authentication.hashing import hash_password, verify_password
 from app.core.authentication.auth_token import create_access_token
+from app.core.authentication.auth_middleware import get_current_user
 from app.core.storage import user_storage
 
 router = APIRouter()
@@ -56,3 +57,9 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     
     access_token = create_access_token(user["id"])
     return TokenResponse(access_token=access_token)
+
+
+@router.post("/logout")
+async def logout(current_user: UserResponse = Depends(get_current_user)):
+    """Logout the current user"""
+    return {"message": "Successfully logged out"}
