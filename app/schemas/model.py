@@ -13,19 +13,21 @@ class ModelCreate(BaseModel):
     name: str = Field(..., description="The name of the model")
     model_id: str = Field(..., description="The unique model identifier")
     type: ModelType = Field(..., description="The type of the model (openai or groq)")
+    reasoning: Optional[bool] = Field(None, description="Whether the model supports reasoning")
 
 
 class ModelUpdate(BaseModel):
     name: Optional[str] = Field(None, description="The name of the model")
     model_id: Optional[str] = Field(None, description="The unique model identifier")
     type: Optional[ModelType] = Field(None, description="The type of the model (openai or groq)")
-
+    reasoning: Optional[bool] = Field(None, description="Whether the model supports reasoning")
 
 class ModelResponse(BaseModel):
     id: str
     name: str
     model_id: str
     type: ModelType
+    reasoning: Optional[bool] = None
     date_created: datetime
     date_modified: datetime
 
