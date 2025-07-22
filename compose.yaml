@@ -1,6 +1,6 @@
 services:
   code-repair-backend:
-    image: questregistry.azurecr.io/code-repair:${SHA}
+    image: alfredasare/code-repair:${SHA}
     restart: always
     ports:
       - 8000:8000
