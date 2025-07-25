@@ -285,6 +285,7 @@ async def store_assessment_results(
             "fixed_code": request.fixed_code,
             "recommendation": request.recommendation,
             "model_id": request.model_id,
+            "pattern_id": request.pattern_id,
             "evaluation_scores": request.scores,
         }
         
@@ -292,7 +293,7 @@ async def store_assessment_results(
         assessment_id = assessment_storage.create(assessment_data)
 
         # Prepare stored fields list
-        stored_fields = ["user_id", "cwe_id", "cve_id", "vulnerable_code", "recommendation", "model_id", "evaluation_scores", "fixed_code"]
+        stored_fields = ["user_id", "cwe_id", "cve_id", "vulnerable_code", "recommendation", "model_id", "pattern_id", "evaluation_scores", "fixed_code"]
         
         return StoreResultsResponse(
             assessment_id=assessment_id,

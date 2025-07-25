@@ -30,6 +30,7 @@ class AssessmentResponse(BaseModel):
     cwe_id: str = Field(..., description="The CWE identifier")
     cve_id: str = Field(..., description="The CVE identifier")
     model_id: str = Field(..., description="The model ID used for generation")
+    pattern_id: Optional[str] = Field(None, description="The pattern ID used for assessment")
     date_created: datetime = Field(..., description="The date the assessment was created")
     date_modified: datetime = Field(..., description="The date the assessment was last modified")
 
@@ -99,6 +100,7 @@ class StoreResultsRequest(BaseModel):
     cwe_id: str = Field(..., description="The CWE identifier")
     cve_id: str = Field(..., description="The CVE identifier")
     model_id: str = Field(..., description="The model ID used for generation")
+    pattern_id: str = Field(..., description="The pattern ID used for assessment")
 
 
 class StoreResultsResponse(BaseModel):
