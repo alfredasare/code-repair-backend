@@ -19,7 +19,7 @@ class QueryHandlerFactory:
         "vanilla_embedding": VanillaEmbeddingHandler,
         "metadata_embedding": MetadataEmbeddingHandler,
         "seg_ctx_embedding": SegCtxEmbeddingHandler,
-        "metadriven_embedding": MetadrivenEmbeddingHandler,
+        "metadata_driven_embedding": MetadrivenEmbeddingHandler,
     }
     
     @classmethod

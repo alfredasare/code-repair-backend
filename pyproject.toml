@@ -19,4 +19,8 @@ dependencies = [
     "deepeval>=3.2.6",
     "langchain-groq>=0.3.6",
     "neo4j>=5.28.1",
+    "pinecone>=7.3.0",
+    "sentence-transformers>=5.0.0",
+    "transformers>=4.54.0",
+    "pip>=25.1.1",
 ]

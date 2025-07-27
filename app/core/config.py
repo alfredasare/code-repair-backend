@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     neo4j_password: str = Field(default="password")
     openai_api_key: str = Field(default="sk-proj-1234567890")
     groq_api_key: str = Field(default="grk_1234567890")
+    pinecone_api_key: str = Field(default="pcsk_1234567890")
     
     class Config:
         env_file = ".env"
