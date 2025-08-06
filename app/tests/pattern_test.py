@@ -37,7 +37,8 @@ def test_create_pattern(auth_headers):
     test_pattern = {
         "name": "Test Pattern",
         "pattern_id": "TEST_001",
-        "description": "This is a test pattern for validation"
+        "description": "This is a test pattern for validation",
+        "full_description": "This is a comprehensive test pattern used for validation purposes in our testing framework"
     }
     
     response = client.post("/api/v1/patterns/", json=test_pattern, headers=auth_headers)
@@ -47,6 +48,29 @@ def test_create_pattern(auth_headers):
     assert data["name"] == test_pattern["name"]
     assert data["pattern_id"] == test_pattern["pattern_id"]
     assert data["description"] == test_pattern["description"]
+    assert data["full_description"] == test_pattern["full_description"]
+    assert "id" in data
+    assert "date_created" in data
+    assert "date_modified" in data
+    
+    pattern_storage.delete_by_id(data["id"])
+
+
+def test_create_pattern_without_full_description(auth_headers):
+    test_pattern = {
+        "name": "Simple Pattern",
+        "pattern_id": "SIMPLE_001",
+        "description": "This is a simple pattern without full description"
+    }
+    
+    response = client.post("/api/v1/patterns/", json=test_pattern, headers=auth_headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["name"] == test_pattern["name"]
+    assert data["pattern_id"] == test_pattern["pattern_id"]
+    assert data["description"] == test_pattern["description"]
+    assert data["full_description"] is None
     assert "id" in data
     assert "date_created" in data
     assert "date_modified" in data
@@ -139,7 +163,8 @@ def test_update_pattern(auth_headers):
     
     update_data = {
         "name": "Updated Pattern Name",
-        "description": "Updated description"
+        "description": "Updated description",
+        "full_description": "Updated comprehensive description"
     }
     
     response = client.put(f"/api/v1/patterns/{pattern_id}", json=update_data, headers=auth_headers)
@@ -149,6 +174,7 @@ def test_update_pattern(auth_headers):
     assert data["name"] == update_data["name"]
     assert data["pattern_id"] == test_pattern["pattern_id"]  # Should remain unchanged
     assert data["description"] == update_data["description"]
+    assert data["full_description"] == update_data["full_description"]
     
     pattern_storage.delete_by_id(pattern_id)
 
