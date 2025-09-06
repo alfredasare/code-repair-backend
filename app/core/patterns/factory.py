@@ -10,7 +10,14 @@ from .handlers.embedding_handlers import (
 
 
 class QueryHandlerFactory:
-    """Factory class to create appropriate query handlers based on pattern_id"""
+    """
+    Factory class to create appropriate query handlers based on pattern_id.
+    
+    To register a new pattern:
+        QueryHandlerFactory.register_handler("my_pattern", MyPatternHandler)
+    
+    Or add directly to _handlers dict for built-in patterns.
+    """
     
     _handlers: Dict[str, Type[QueryHandler]] = {
         "knn_graph": KnnGraphHandler,
@@ -35,3 +42,23 @@ class QueryHandlerFactory:
     def get_available_patterns(cls) -> list[str]:
         """Get list of all available pattern IDs"""
         return list(cls._handlers.keys())
+    
+    @classmethod
+    def register_handler(cls, pattern_id: str, handler_class: Type[QueryHandler]) -> None:
+        """
+        Register a new pattern handler.
+        
+        Args:
+            pattern_id: Unique identifier for the pattern
+            handler_class: Class that implements QueryHandler interface
+        """
+        if not issubclass(handler_class, QueryHandler):
+            raise ValueError(f"Handler class must inherit from QueryHandler")
+        
+        cls._handlers[pattern_id] = handler_class
+    
+    @classmethod
+    def unregister_handler(cls, pattern_id: str) -> None:
+        """Remove a pattern handler from the registry"""
+        if pattern_id in cls._handlers:
+            del cls._handlers[pattern_id]
