@@ -36,6 +36,7 @@ jobs:
           echo "ACCESS_TOKEN_EXPIRE_MINUTES=${{secrets.ACCESS_TOKEN_EXPIRE_MINUTES}}" >> .env
           echo "OPENAI_API_KEY=${{secrets.OPENAI_API_KEY}}" >> .env
           echo "GROQ_API_KEY=${{secrets.GROQ_API_KEY}}" >> .env
+          echo "CREDENTIAL_ENCRYPTION_KEY=${{secrets.CREDENTIAL_ENCRYPTION_KEY}}" >> .env
 
       - name: Login to Docker Hub
         run: |
