@@ -1,4 +1,4 @@
-from typing import Dict, Type
+from typing import Dict, Type, Set
 from .base import QueryHandler
 from .handlers.graph_handlers import KnnGraphHandler, PagerankGraphHandler, MetapathGraphHandler
 from .handlers.embedding_handlers import (
@@ -27,6 +27,20 @@ class QueryHandlerFactory:
         "metadata_embedding": MetadataEmbeddingHandler,
         "seg_ctx_embedding": SegCtxEmbeddingHandler,
         "metadata_driven_embedding": MetadrivenEmbeddingHandler,
+    }
+    
+    # Pattern type classifications for validation
+    _graph_patterns: Set[str] = {
+        "knn_graph", 
+        "pagerank_graph", 
+        "metapath_graph"
+    }
+    
+    _embedding_patterns: Set[str] = {
+        "vanilla_embedding", 
+        "metadata_embedding", 
+        "seg_ctx_embedding", 
+        "metadata_driven_embedding"
     }
     
     @classmethod
@@ -62,3 +76,56 @@ class QueryHandlerFactory:
         """Remove a pattern handler from the registry"""
         if pattern_id in cls._handlers:
             del cls._handlers[pattern_id]
+    
+    @classmethod
+    def is_graph_pattern(cls, pattern_id: str) -> bool:
+        """Check if a pattern requires graph database"""
+        return pattern_id in cls._graph_patterns
+    
+    @classmethod
+    def is_embedding_pattern(cls, pattern_id: str) -> bool:
+        """Check if a pattern requires vector database"""
+        return pattern_id in cls._embedding_patterns
+    
+    @classmethod
+    def validate_data_source_compatibility(cls, pattern_id: str, 
+                                         vector_data_source_id: str = None,
+                                         graph_data_source_id: str = None) -> None:
+        """
+        Validate that the pattern is compatible with the provided data sources.
+        
+        Args:
+            pattern_id: The pattern to validate
+            vector_data_source_id: Vector database data source ID (if provided)
+            graph_data_source_id: Graph database data source ID (if provided)
+            
+        Raises:
+            ValueError: If pattern and data source types are incompatible
+        """
+        if pattern_id not in cls._handlers:
+            raise ValueError(f"Unknown pattern_id: {pattern_id}")
+        
+        if cls.is_graph_pattern(pattern_id):
+            # Graph patterns cannot use vector databases
+            if vector_data_source_id and not graph_data_source_id:
+                raise ValueError(f"Graph pattern '{pattern_id}' cannot use vector database. Please select a graph database.")
+        
+        elif cls.is_embedding_pattern(pattern_id):
+            # Embedding patterns cannot use graph databases
+            if graph_data_source_id and not vector_data_source_id:
+                raise ValueError(f"Embedding pattern '{pattern_id}' cannot use graph database. Please select a vector database.")
+    
+    @classmethod
+    def get_required_data_source_type(cls, pattern_id: str) -> str:
+        """
+        Get the required data source type for a pattern.
+        
+        Returns:
+            "graph", "vector", or "unknown"
+        """
+        if pattern_id in cls._graph_patterns:
+            return "graph"
+        elif pattern_id in cls._embedding_patterns:
+            return "vector"
+        else:
+            return "unknown"

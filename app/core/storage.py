@@ -183,9 +183,37 @@ class SettingsStorage(MongoStorage):
         return self.find_one({"user_id": user_id})
 
 
+class DataSourceStorage(MongoStorage):
+    def __init__(self):
+        super().__init__("data_sources")
+    
+    def _setup_indexes(self):
+        indexes = [
+            IndexModel([("name", 1)], unique=True),
+            IndexModel([("db_type", 1)]),
+            IndexModel([("provider", 1)]),
+            IndexModel([("is_active", 1)]),
+            IndexModel([("date_created", -1)]),
+        ]
+        self.collection.create_indexes(indexes)
+    
+    def find_by_type(self, db_type: str) -> List[Dict[str, Any]]:
+        return self.find_many({"db_type": db_type, "is_active": True})
+    
+    def find_by_provider(self, provider: str) -> List[Dict[str, Any]]:
+        return self.find_many({"provider": provider, "is_active": True})
+    
+    def find_default_by_type(self, db_type: str) -> Optional[Dict[str, Any]]:
+        return self.find_one({"db_type": db_type, "is_default": True, "is_active": True})
+    
+    def find_active_sources(self) -> List[Dict[str, Any]]:
+        return self.find_many({"is_active": True})
+
+
 user_storage = UserStorage()
 criteria_storage = CriteriaStorage()
 pattern_storage = PatternStorage()
 model_storage = ModelStorage()
 assessment_storage = AssessmentStorage()
 settings_storage = SettingsStorage()
+data_source_storage = DataSourceStorage()

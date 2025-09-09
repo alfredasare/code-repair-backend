@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="sk-proj-1234567890")
     groq_api_key: str = Field(default="grk_1234567890")
     pinecone_api_key: str = Field(default="pcsk_1234567890")
+    credential_encryption_key: str = Field(default="")
     
     class Config:
         env_file = ".env"

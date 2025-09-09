@@ -1,15 +1,18 @@
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import torch
-from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 from transformers import AutoModelForMaskedLM, AutoTokenizer
-from app.core.config import settings
 from ..base import QueryHandler
+from app.core.connections.manager import connection_manager
+from app.core.connections.clients import PineconeClient
 
 
 class VanillaEmbeddingHandler(QueryHandler):
-    def execute_query(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+    def execute_query(self, cwe_id: str, cve_id: str, 
+                     vector_data_source_id: Optional[str] = None,
+                     graph_data_source_id: Optional[str] = None, 
+                     **kwargs) -> Dict[str, Any]:
         self.validate_base_params(cwe_id, cve_id)
         # TODO: Implement vanilla embedding query logic
         return {
@@ -19,7 +22,10 @@ class VanillaEmbeddingHandler(QueryHandler):
 
 
 class MetadataEmbeddingHandler(QueryHandler):
-    def execute_query(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+    def execute_query(self, cwe_id: str, cve_id: str, 
+                     vector_data_source_id: Optional[str] = None,
+                     graph_data_source_id: Optional[str] = None, 
+                     **kwargs) -> Dict[str, Any]:
         self.validate_base_params(cwe_id, cve_id)
         # TODO: Implement metadata embedding query logic
         return {
@@ -29,7 +35,10 @@ class MetadataEmbeddingHandler(QueryHandler):
 
 
 class SegCtxEmbeddingHandler(QueryHandler):
-    def execute_query(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+    def execute_query(self, cwe_id: str, cve_id: str, 
+                     vector_data_source_id: Optional[str] = None,
+                     graph_data_source_id: Optional[str] = None, 
+                     **kwargs) -> Dict[str, Any]:
         self.validate_base_params(cwe_id, cve_id)
         # TODO: Implement segment context embedding query logic
         return {
@@ -39,20 +48,23 @@ class SegCtxEmbeddingHandler(QueryHandler):
 
 
 class MetadrivenEmbeddingHandler(QueryHandler):
-    def execute_query(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+    def execute_query(self, cwe_id: str, cve_id: str, 
+                     vector_data_source_id: Optional[str] = None,
+                     graph_data_source_id: Optional[str] = None, 
+                     **kwargs) -> Dict[str, Any]:
         self.validate_base_params(cwe_id, cve_id)
         
-        # Initialize Pinecone client
-        pc = Pinecone(api_key=settings.pinecone_api_key)
+        # Get vector database client
+        if vector_data_source_id:
+            vector_client = connection_manager.get_vector_client(vector_data_source_id)
+        else:
+            vector_client = connection_manager.get_default_vector_client()
         
-        # Initialize indices
-        mitre_index_name = 'metadata-aug-mitre'
-        bigvul_index_name = 'metadata-retrieval-bigvul'
-        cvefixes_index_name = 'code-fixing-metadata-aug'
-        
-        mitre_index = pc.Index(mitre_index_name)
-        bigvul_index = pc.Index(bigvul_index_name)
-        cvefixes_index = pc.Index(cvefixes_index_name)
+        if not isinstance(vector_client, PineconeClient):
+            return {
+                "raw_results": {},
+                "formatted_results": "MetadrivenEmbeddingHandler currently only supports Pinecone"
+            }
         
         # Initialize models
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -79,38 +91,44 @@ class MetadrivenEmbeddingHandler(QueryHandler):
         
         top_k = kwargs.get('top_k', 3)
         
-        # Query all three indices
-        cvefixes_results = cvefixes_index.query(
-            vector=dense_vec, 
-            sparse_vector=sparse_vec, 
-            top_k=top_k,
-            filter={
-                "cwe": {"$eq": cwe_id},
-                "cve": {"$eq": cve_id}
-            },
-            include_metadata=True
-        )
-        
-        bigvul_results = bigvul_index.query(
-            vector=dense_vec, 
-            sparse_vector=sparse_vec, 
-            top_k=top_k,
-            filter={
-                "cwe": {"$eq": cwe_id},
-                "cve": {"$eq": cve_id}
-            },
-            include_metadata=True
-        )
-        
-        mitre_results = mitre_index.query(
-            vector=dense_vec, 
-            sparse_vector=sparse_vec, 
-            top_k=top_k,
-            filter={
-                "cwe": {"$eq": cwe_id},
-            },
-            include_metadata=True
-        )
+        # Query all three indices using the client
+        try:
+            cvefixes_results = vector_client.query(
+                vector=dense_vec,
+                sparse_vector=sparse_vec,
+                top_k=top_k,
+                filter={
+                    "cwe": {"$eq": cwe_id},
+                    "cve": {"$eq": cve_id}
+                },
+                index_type="cvefixes"
+            )
+            
+            bigvul_results = vector_client.query(
+                vector=dense_vec,
+                sparse_vector=sparse_vec,
+                top_k=top_k,
+                filter={
+                    "cwe": {"$eq": cwe_id},
+                    "cve": {"$eq": cve_id}
+                },
+                index_type="bigvul"
+            )
+            
+            mitre_results = vector_client.query(
+                vector=dense_vec,
+                sparse_vector=sparse_vec,
+                top_k=top_k,
+                filter={
+                    "cwe": {"$eq": cwe_id},
+                },
+                index_type="mitre"
+            )
+        except ValueError as e:
+            return {
+                "raw_results": {},
+                "formatted_results": f"Index configuration error: {str(e)}"
+            }
         
         # Build context using the existing function
         formatted_results = self._build_context(mitre_results, bigvul_results, cvefixes_results)

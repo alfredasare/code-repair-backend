@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class QueryHandler(ABC):
@@ -22,13 +22,18 @@ class QueryHandler(ABC):
     """
     
     @abstractmethod
-    def execute_query(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+    def execute_query(self, cwe_id: str, cve_id: str, 
+                     vector_data_source_id: Optional[str] = None,
+                     graph_data_source_id: Optional[str] = None, 
+                     **kwargs) -> Dict[str, Any]:
         """
         Execute the pattern-specific query logic.
         
         Args:
             cwe_id: The CWE identifier to query for
             cve_id: The CVE identifier to query for
+            vector_data_source_id: ID of vector database data source to use
+            graph_data_source_id: ID of graph database data source to use
             **kwargs: Additional pattern-specific parameters
             
         Returns:

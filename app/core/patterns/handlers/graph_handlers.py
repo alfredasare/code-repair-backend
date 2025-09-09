@@ -1,10 +1,14 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from ..base import QueryHandler
-from app.core.neo4j_client import get_neo4j_graph
+from app.core.connections.manager import connection_manager
+from app.core.connections.clients import Neo4jClient
 
 
 class KnnGraphHandler(QueryHandler):
-    def execute_query(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+    def execute_query(self, cwe_id: str, cve_id: str, 
+                     vector_data_source_id: Optional[str] = None,
+                     graph_data_source_id: Optional[str] = None, 
+                     **kwargs) -> Dict[str, Any]:
         self.validate_base_params(cwe_id, cve_id)
         
         # Extract optional parameters with defaults
@@ -12,8 +16,14 @@ class KnnGraphHandler(QueryHandler):
         alpha = kwargs.get('alpha', 0.8)
         top_k = kwargs.get('top_k', 10)
         
+        # Get graph client
+        if graph_data_source_id:
+            graph_client = connection_manager.get_graph_client(graph_data_source_id)
+        else:
+            graph_client = connection_manager.get_default_graph_client()
+        
         # Query the graph
-        raw_results = self._query_graph(cwe_id, cve_id, max_hops, alpha, top_k)
+        raw_results = self._query_graph(graph_client, cwe_id, cve_id, max_hops, alpha, top_k)
         
         # Format the results
         formatted_results = self._build_context(raw_results)
@@ -23,9 +33,9 @@ class KnnGraphHandler(QueryHandler):
             "formatted_results": formatted_results
         }
     
-    def _query_graph(self, cwe_id: str, cve_id: str, max_hops: int, alpha: float, top_k: int):
+    def _query_graph(self, graph_client: Neo4jClient, cwe_id: str, cve_id: str, max_hops: int, alpha: float, top_k: int):
         """Query the Neo4j graph using KNN approach"""
-        graph = get_neo4j_graph().get_graph()
+        graph = graph_client.get_langchain_graph()
         
         return graph.query(
             """
@@ -205,7 +215,10 @@ class KnnGraphHandler(QueryHandler):
 
 
 class PagerankGraphHandler(QueryHandler):
-    def execute_query(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+    def execute_query(self, cwe_id: str, cve_id: str, 
+                     vector_data_source_id: Optional[str] = None,
+                     graph_data_source_id: Optional[str] = None, 
+                     **kwargs) -> Dict[str, Any]:
         self.validate_base_params(cwe_id, cve_id)
         
         # Extract optional parameters with defaults
@@ -213,8 +226,14 @@ class PagerankGraphHandler(QueryHandler):
         top_k = kwargs.get('top_k', 5)
         score_prop = kwargs.get('score_prop', 'pr_weighted_shap')
         
+        # Get graph client
+        if graph_data_source_id:
+            graph_client = connection_manager.get_graph_client(graph_data_source_id)
+        else:
+            graph_client = connection_manager.get_default_graph_client()
+        
         # Query the graph using PageRank approach
-        raw_results = self._query_graph(cwe_id, cve_id, hops, top_k, score_prop)
+        raw_results = self._query_graph_pagerank(graph_client, cwe_id, cve_id, hops, top_k, score_prop)
         
         # Format the results
         formatted_results = self._build_context(raw_results)
@@ -224,9 +243,9 @@ class PagerankGraphHandler(QueryHandler):
             "formatted_results": formatted_results
         }
     
-    def _query_graph(self, cwe_id: str, cve_id: str, hops: int, top_k: int, score_prop: str):
+    def _query_graph_pagerank(self, graph_client: Neo4jClient, cwe_id: str, cve_id: str, hops: int, top_k: int, score_prop: str):
         """Execute PageRank-based retrieval for vulnerability examples"""
-        graph = get_neo4j_graph().get_graph()
+        graph = graph_client.get_langchain_graph()
         
         # If specific CVE provided, try to find it first
         if cve_id:
@@ -239,7 +258,7 @@ class PagerankGraphHandler(QueryHandler):
                 return [self._query_cwe_details(graph, cwe_id, score_prop, rank_map, override_cve_id=cve_id)]
         
         # Otherwise, get CWE and similar CWEs ordered by PageRank
-        return self._query_only_cwe_ordered(graph, cwe_id, hops, top_k, score_prop)
+        return self._query_only_cwe_ordered(graph_client, cwe_id, hops, top_k, score_prop)
     
     def _get_influential_rank_map(self, graph, score_prop: str):
         """Build a map from CWE id -> global rank based on descending score_prop"""
@@ -371,8 +390,9 @@ class PagerankGraphHandler(QueryHandler):
         
         return list(set(arrows))
     
-    def _query_only_cwe_ordered(self, graph, seed_cwe_id: str, hops: int, top_k: int, score_prop: str):
+    def _query_only_cwe_ordered(self, graph_client: Neo4jClient, seed_cwe_id: str, hops: int, top_k: int, score_prop: str):
         """Query CWE and similar CWEs ordered by PageRank"""
+        graph = graph_client.get_langchain_graph()
         rank_map = self._get_influential_rank_map(graph, score_prop)
         results = []
         
@@ -514,15 +534,24 @@ class PagerankGraphHandler(QueryHandler):
 
 
 class MetapathGraphHandler(QueryHandler):
-    def execute_query(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+    def execute_query(self, cwe_id: str, cve_id: str, 
+                     vector_data_source_id: Optional[str] = None,
+                     graph_data_source_id: Optional[str] = None, 
+                     **kwargs) -> Dict[str, Any]:
         self.validate_base_params(cwe_id, cve_id)
         
         # Extract optional parameters with defaults
         max_results = kwargs.get('max_results', 10)
         max_per_path = kwargs.get('max_per_path', 3)
         
+        # Get graph client
+        if graph_data_source_id:
+            graph_client = connection_manager.get_graph_client(graph_data_source_id)
+        else:
+            graph_client = connection_manager.get_default_graph_client()
+        
         # Query the graph using metapath approach
-        raw_results = self._query_graph(cwe_id, cve_id, max_results, max_per_path)
+        raw_results = self._query_graph_metapath(graph_client, cwe_id, cve_id, max_results, max_per_path)
         
         # Format the results
         formatted_results = self._build_context(raw_results)
@@ -532,9 +561,9 @@ class MetapathGraphHandler(QueryHandler):
             "formatted_results": formatted_results
         }
     
-    def _query_graph(self, cwe_id: str, cve_id: str, max_results: int, max_per_path: int):
+    def _query_graph_metapath(self, graph_client: Neo4jClient, cwe_id: str, cve_id: str, max_results: int, max_per_path: int):
         """Execute meta-path retrieval for vulnerability examples"""
-        graph = get_neo4j_graph().get_graph()
+        graph = graph_client.get_langchain_graph()
         all_results = []
         found_cve_ids = set()
         

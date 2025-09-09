@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.routers import auth, user, settings, pattern, model, query, assessment
+from app.api.v1.routers import auth, user, settings, pattern, model, query, assessment, data_sources
 
 app = FastAPI(title="Code Repair Backend", version="1.0.0")
 
@@ -19,6 +19,7 @@ app.include_router(pattern.router, prefix="/api/v1/patterns", tags=["patterns"])
 app.include_router(model.router, prefix="/api/v1/models", tags=["models"])
 app.include_router(query.router, prefix="/api/v1/query", tags=["query"])
 app.include_router(assessment.router, prefix="/api/v1/assessments", tags=["assessments"])
+app.include_router(data_sources.router, prefix="/api/v1/data-sources", tags=["data-sources"])
 
 
 @app.get("/")

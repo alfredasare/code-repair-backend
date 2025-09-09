@@ -3,6 +3,7 @@ from app.schemas.query import QueryRequest, QueryResponse
 from app.schemas.user import UserResponse
 from app.core.authentication.auth_middleware import get_current_user
 from app.core.patterns.factory import QueryHandlerFactory
+from app.core.storage import settings_storage
 
 router = APIRouter()
 
@@ -13,10 +14,29 @@ async def query_pattern(
     current_user: UserResponse = Depends(get_current_user)
 ):
     try:
+        # Get user settings to determine data source preferences
+        user_settings = settings_storage.find_by_user_id(current_user.id)
+        
+        vector_data_source_id = None
+        graph_data_source_id = None
+        
+        if user_settings:
+            vector_data_source_id = user_settings.get("vector_data_source_id")
+            graph_data_source_id = user_settings.get("graph_data_source_id")
+        
+        # Validate data source compatibility with pattern
+        QueryHandlerFactory.validate_data_source_compatibility(
+            request.pattern_id,
+            vector_data_source_id,
+            graph_data_source_id
+        )
+        
         handler = QueryHandlerFactory.get_handler(request.pattern_id)
         results = handler.execute_query(
             cwe_id=request.cwe_id,
             cve_id=request.cve_id,
+            vector_data_source_id=vector_data_source_id,
+            graph_data_source_id=graph_data_source_id,
             **request.additional_params
         )
         
