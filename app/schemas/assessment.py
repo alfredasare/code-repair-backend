@@ -31,6 +31,7 @@ class AssessmentResponse(BaseModel):
     cve_id: str = Field(..., description="The CVE identifier")
     model_id: str = Field(..., description="The model ID used for generation")
     pattern_id: Optional[str] = Field(None, description="The pattern ID used for assessment")
+    graph_visualization: Optional[Dict[str, Any]] = Field(None, description="D3-compatible graph data")
     date_created: datetime = Field(..., description="The date the assessment was created")
     date_modified: datetime = Field(..., description="The date the assessment was last modified")
 
@@ -75,7 +76,7 @@ class EvaluationScoresRequest(BaseModel):
     cve_id: str = Field(..., description="The CVE identifier")
     recommendation: str = Field(..., description="The recommendation to evaluate")
     retrieved_context: str = Field(..., description="The context retrieved from pattern matching")
-    model: str = Field(default="gpt-4o-mini", description="The model to use for evaluation")
+    model: str = Field(default="gpt-4o", description="The model to use for evaluation")
 
 
 class EvaluationScore(BaseModel):
@@ -101,6 +102,7 @@ class StoreResultsRequest(BaseModel):
     cve_id: str = Field(..., description="The CVE identifier")
     model_id: str = Field(..., description="The model ID used for generation")
     pattern_id: str = Field(..., description="The pattern ID used for assessment")
+    graph_visualization: Optional[Dict[str, Any]] = Field(None, description="D3-compatible graph data")
 
 
 class StoreResultsResponse(BaseModel):

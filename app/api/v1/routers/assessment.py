@@ -289,6 +289,10 @@ async def store_assessment_results(
             "evaluation_scores": request.scores,
         }
         
+        # Add graph visualization if provided
+        if request.graph_visualization:
+            assessment_data["graph_visualization"] = request.graph_visualization
+        
         # Store in MongoDB
         assessment_id = assessment_storage.create(assessment_data)
 

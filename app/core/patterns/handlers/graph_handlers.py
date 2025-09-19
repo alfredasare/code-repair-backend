@@ -212,6 +212,156 @@ class KnnGraphHandler(QueryHandler):
 
         # --- 4. Combine all parts into the final context string ---
         return "\n".join(context_parts)
+    
+    def get_graph_data(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+        """Get D3-compatible graph data"""
+        from app.schemas.graph import GraphNode, GraphEdge, GraphVisualizationData
+        from app.core.connections.manager import connection_manager
+        
+        # Get graph client
+        graph_data_source_id = kwargs.get('graph_data_source_id')
+        if graph_data_source_id:
+            graph_client = connection_manager.get_graph_client(graph_data_source_id)
+        else:
+            graph_client = connection_manager.get_default_graph_client()
+        
+        # Extract parameters
+        max_hops = kwargs.get('max_hops', 2)
+        alpha = kwargs.get('alpha', 0.8)
+        top_k = kwargs.get('top_k', 10)
+        
+        # Query the graph
+        raw_results = self._query_graph(graph_client, cwe_id, cve_id, max_hops, alpha, top_k)
+        
+        # Convert to D3 format
+        nodes = []
+        edges = []
+        node_ids = set()
+        
+        # Process each result item
+        for item in raw_results:
+            record = item.get('result', {})
+            
+            # Extract CWE node
+            cwe = record.get('cwe', {})
+            cwe_node_id = cwe.get('id')
+            if cwe_node_id and cwe_node_id not in node_ids:
+                node_ids.add(cwe_node_id)
+                
+                score = record.get('score', 0)
+                node_size = 10 + (score * 20)  # Size based on score
+                node_color = "#ff4444" if score == 1.0 else "#4444ff"
+                
+                nodes.append(GraphNode(
+                    id=cwe_node_id,
+                    label=cwe.get('name', cwe_node_id),
+                    type="CWE",
+                    size=node_size,
+                    color=node_color,
+                    properties={
+                        "description": cwe.get('description', ''),
+                        "score": score,
+                        "rank": record.get('rank', 0)
+                    }
+                ))
+            
+            # Extract CVE node
+            cve = record.get('cve') or {}
+            cve_node_id = cve.get('id')
+            if cve_node_id and cve_node_id not in node_ids:
+                node_ids.add(cve_node_id)
+                
+                nodes.append(GraphNode(
+                    id=cve_node_id,
+                    label=cve_node_id,
+                    type="CVE",
+                    size=8.0,
+                    color="#44ff44",
+                    properties={
+                        "description": cve.get('description', ''),
+                        "related_cwe": cwe_node_id
+                    }
+                ))
+                
+                # Add edge from CWE to CVE
+                if cwe_node_id:
+                    edges.append(GraphEdge(
+                        id=f"{cwe_node_id}_to_{cve_node_id}",
+                        source=cwe_node_id,
+                        target=cve_node_id,
+                        type="HAS_VULNERABILITY",
+                        weight=1.0,
+                        label="HAS_VULNERABILITY"
+                    ))
+            
+            # Extract Code Example node
+            code_example = record.get('codeExample') or {}
+            code_node_id = code_example.get('id')
+            if code_node_id and code_node_id not in node_ids:
+                node_ids.add(code_node_id)
+                
+                nodes.append(GraphNode(
+                    id=code_node_id,
+                    label=f"Code Example {code_node_id}",
+                    type="CODE_EXAMPLE",
+                    size=6.0,
+                    color="#ffaa44",
+                    properties={
+                        "code_before": code_example.get('code_before', ''),
+                        "code_after": code_example.get('code_after', ''),
+                        "related_cve": cve_node_id
+                    }
+                ))
+                
+                # Add edge from CVE to Code Example
+                if cve_node_id:
+                    edges.append(GraphEdge(
+                        id=f"{cve_node_id}_to_{code_node_id}",
+                        source=cve_node_id,
+                        target=code_node_id,
+                        type="HAS_CODE_EXAMPLE",
+                        weight=1.0,
+                        label="HAS_CODE_EXAMPLE"
+                    ))
+        
+        # Add CWE-to-CWE relationship edges based on the graph traversal
+        center_cwe_id = cwe_id
+        for item in raw_results:
+            record = item.get('result', {})
+            related_cwe = record.get('cwe', {})
+            related_cwe_id = related_cwe.get('id')
+            relation_types = record.get('relationTypes', [])
+            
+            # Only create edges for non-center CWEs that have relationship types
+            if (related_cwe_id and related_cwe_id != center_cwe_id and 
+                related_cwe_id in node_ids and center_cwe_id in node_ids and
+                relation_types):
+                
+                # Create an edge for each relationship type in the path
+                for rel_type in relation_types:
+                    edge_id = f"{center_cwe_id}_to_{related_cwe_id}_{rel_type}"
+                    if not any(edge.id == edge_id for edge in edges):  # Avoid duplicates
+                        edges.append(GraphEdge(
+                            id=edge_id,
+                            source=center_cwe_id,
+                            target=related_cwe_id,
+                            type=rel_type,
+                            weight=record.get('score', 0.5),
+                            label=rel_type.replace('_', ' ').title()
+                        ))
+        
+        graph_data = GraphVisualizationData(
+            nodes=nodes,
+            edges=edges,
+            metadata={
+                "center_node": cwe_id,
+                "query_type": "knn_graph",
+                "total_nodes": len(nodes),
+                "total_edges": len(edges)
+            }
+        )
+        
+        return graph_data.model_dump()
 
 
 class PagerankGraphHandler(QueryHandler):
@@ -223,7 +373,7 @@ class PagerankGraphHandler(QueryHandler):
         
         # Extract optional parameters with defaults
         hops = kwargs.get('hops', 3)
-        top_k = kwargs.get('top_k', 5)
+        top_k = kwargs.get('top_k', 10)
         score_prop = kwargs.get('score_prop', 'pr_weighted_shap')
         
         # Get graph client
@@ -531,6 +681,151 @@ class PagerankGraphHandler(QueryHandler):
         context_parts.append("Use these examples to inform your recommended solution for the target vulnerability.")
         
         return "\n".join(context_parts)
+    
+    def get_graph_data(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+        """Get D3-compatible graph data for PageRank"""
+        from app.schemas.graph import GraphNode, GraphEdge, GraphVisualizationData
+        from app.core.connections.manager import connection_manager
+        
+        # Get graph client
+        graph_data_source_id = kwargs.get('graph_data_source_id')
+        if graph_data_source_id:
+            graph_client = connection_manager.get_graph_client(graph_data_source_id)
+        else:
+            graph_client = connection_manager.get_default_graph_client()
+        
+        # Extract parameters
+        hops = kwargs.get('hops', 3)
+        top_k = kwargs.get('top_k', 10)
+        score_prop = kwargs.get('score_prop', 'pr_weighted_shap')
+        
+        # Query the graph
+        raw_results = self._query_graph_pagerank(graph_client, cwe_id, cve_id, hops, top_k, score_prop)
+        
+        # Convert to D3 format
+        nodes = []
+        edges = []
+        node_ids = set()
+        
+        # Process each result item
+        for i, result in enumerate(raw_results):
+            rank = result.get('rank', i + 1)
+            
+            # Extract CWE node
+            cwe_node_id = result.get('id')
+            if cwe_node_id and cwe_node_id not in node_ids:
+                node_ids.add(cwe_node_id)
+                
+                # Node size based on rank (lower rank = larger node)
+                node_size = max(8, 25 - (rank * 2))
+                node_color = "#ff4444" if cwe_node_id == cwe_id else "#4444ff"
+                
+                nodes.append(GraphNode(
+                    id=cwe_node_id,
+                    label=result.get('name', cwe_node_id),
+                    type="CWE",
+                    size=node_size,
+                    color=node_color,
+                    properties={
+                        "description": result.get('description', ''),
+                        "rank": rank,
+                        score_prop: result.get(score_prop, 0)
+                    }
+                ))
+            
+            # Extract CVE node
+            related_cve = result.get('related_cve') or {}
+            cve_node_id = related_cve.get('id')
+            if cve_node_id and cve_node_id not in node_ids:
+                node_ids.add(cve_node_id)
+                
+                nodes.append(GraphNode(
+                    id=cve_node_id,
+                    label=cve_node_id,
+                    type="CVE",
+                    size=8.0,
+                    color="#44ff44",
+                    properties={
+                        "description": related_cve.get('description', ''),
+                        "related_cwe": cwe_node_id
+                    }
+                ))
+                
+                # Add edge from CWE to CVE
+                if cwe_node_id:
+                    edges.append(GraphEdge(
+                        id=f"{cwe_node_id}_to_{cve_node_id}",
+                        source=cwe_node_id,
+                        target=cve_node_id,
+                        type="HAS_VULNERABILITY",
+                        weight=1.0,
+                        label="HAS_VULNERABILITY"
+                    ))
+            
+            # Extract Code Example node
+            code_example = result.get('code_example', {})
+            code_node_id = code_example.get('id')
+            if code_node_id and code_node_id not in node_ids:
+                node_ids.add(code_node_id)
+                
+                nodes.append(GraphNode(
+                    id=code_node_id,
+                    label=f"Code Example {code_node_id}",
+                    type="CODE_EXAMPLE",
+                    size=6.0,
+                    color="#ffaa44",
+                    properties={
+                        "code_before": code_example.get('code_before', ''),
+                        "code_after": code_example.get('code_after', ''),
+                        "related_cve": cve_node_id
+                    }
+                ))
+                
+                # Add edge from CVE to Code Example
+                if cve_node_id:
+                    edges.append(GraphEdge(
+                        id=f"{cve_node_id}_to_{code_node_id}",
+                        source=cve_node_id,
+                        target=code_node_id,
+                        type="HAS_CODE_EXAMPLE",
+                        weight=1.0,
+                        label="HAS_CODE_EXAMPLE"
+                    ))
+        
+        # Add CWE-to-CWE relationship edges based on PageRank relationships
+        center_cwe_id = cwe_id
+        for i, result in enumerate(raw_results):
+            rank = result.get('rank', i + 1)
+            related_cwe_id = result.get('id')
+            
+            # Skip center node and ensure both nodes exist
+            if (related_cwe_id and related_cwe_id != center_cwe_id and 
+                related_cwe_id in node_ids and center_cwe_id in node_ids):
+                
+                # For PageRank, we create a general "RELATED_TO" edge with rank-based weight
+                edge_id = f"{center_cwe_id}_to_{related_cwe_id}_pagerank"
+                if not any(edge.id == edge_id for edge in edges):  # Avoid duplicates
+                    edges.append(GraphEdge(
+                        id=edge_id,
+                        source=center_cwe_id,
+                        target=related_cwe_id,
+                        type="RELATED_TO",
+                        weight=1.0 / rank,  # Higher weight for lower rank (better results)
+                        label=f"Related (Rank {rank})"
+                    ))
+        
+        graph_data = GraphVisualizationData(
+            nodes=nodes,
+            edges=edges,
+            metadata={
+                "center_node": cwe_id,
+                "query_type": "pagerank_graph",
+                "total_nodes": len(nodes),
+                "total_edges": len(edges)
+            }
+        )
+        
+        return graph_data.model_dump()
 
 
 class MetapathGraphHandler(QueryHandler):
@@ -540,8 +835,8 @@ class MetapathGraphHandler(QueryHandler):
                      **kwargs) -> Dict[str, Any]:
         self.validate_base_params(cwe_id, cve_id)
         
-        # Extract optional parameters with defaults
-        max_results = kwargs.get('max_results', 10)
+        # Extract optional parameters with defaults (support both top_k and max_results for consistency)
+        max_results = kwargs.get('max_results') or kwargs.get('top_k', 10)
         max_per_path = kwargs.get('max_per_path', 3)
         
         # Get graph client
@@ -841,3 +1136,176 @@ class MetapathGraphHandler(QueryHandler):
         context_parts.append("Learn from the fixes demonstrated in these meta-path retrieved examples to inform your recommended solution.")
         
         return "\n".join(context_parts)
+    
+    def get_graph_data(self, cwe_id: str, cve_id: str, **kwargs) -> Dict[str, Any]:
+        """Get D3-compatible graph data for Metapath"""
+        from app.schemas.graph import GraphNode, GraphEdge, GraphVisualizationData
+        from app.core.connections.manager import connection_manager
+        
+        # Get graph client
+        graph_data_source_id = kwargs.get('graph_data_source_id')
+        if graph_data_source_id:
+            graph_client = connection_manager.get_graph_client(graph_data_source_id)
+        else:
+            graph_client = connection_manager.get_default_graph_client()
+        
+        # Extract parameters (support both top_k and max_results for consistency)
+        max_results = kwargs.get('max_results') or kwargs.get('top_k', 10)
+        max_per_path = kwargs.get('max_per_path', 3)
+        
+        # Query the graph
+        raw_results = self._query_graph_metapath(graph_client, cwe_id, cve_id, max_results, max_per_path)
+        
+        # Convert to D3 format
+        nodes = []
+        edges = []
+        node_ids = set()
+        
+        # Color mapping for different path types
+        path_colors = {
+            'direct': '#ff4444',    # Red for direct paths
+            'peer': '#4444ff',      # Blue for peer paths  
+            'parent': '#44ff44',    # Green for parent paths
+            'related': '#ffaa44'    # Orange for related paths
+        }
+        
+        # Process each result item
+        for item in raw_results:
+            record = item.get('result', {})
+            
+            # Extract CWE node
+            cwe = record.get('cwe', {})
+            cwe_node_id = cwe.get('id')
+            if cwe_node_id and cwe_node_id not in node_ids:
+                node_ids.add(cwe_node_id)
+                
+                path_type = record.get('pathType', 'unknown')
+                score = record.get('score', 0)
+                
+                # Node size based on score
+                node_size = 8 + (score * 15)
+                node_color = path_colors.get(path_type, '#888888')
+                
+                # Special handling for center node
+                if cwe_node_id == cwe_id:
+                    node_color = '#ff0000'
+                    node_size = max(node_size, 20)
+                
+                nodes.append(GraphNode(
+                    id=cwe_node_id,
+                    label=cwe.get('name', cwe_node_id),
+                    type="CWE",
+                    size=node_size,
+                    color=node_color,
+                    properties={
+                        "description": cwe.get('description', ''),
+                        "score": score,
+                        "pathType": path_type,
+                        "rank": record.get('rank', 0)
+                    }
+                ))
+            
+            # Extract CVE node
+            cve = record.get('cve') or {}
+            cve_node_id = cve.get('id')
+            if cve_node_id and cve_node_id not in node_ids:
+                node_ids.add(cve_node_id)
+                
+                nodes.append(GraphNode(
+                    id=cve_node_id,
+                    label=cve_node_id,
+                    type="CVE",
+                    size=8.0,
+                    color="#00aa00",
+                    properties={
+                        "description": cve.get('description', ''),
+                        "related_cwe": cwe_node_id
+                    }
+                ))
+                
+                # Add edge from CWE to CVE
+                if cwe_node_id:
+                    edges.append(GraphEdge(
+                        id=f"{cwe_node_id}_to_{cve_node_id}",
+                        source=cwe_node_id,
+                        target=cve_node_id,
+                        type="HAS_VULNERABILITY",
+                        weight=1.0,
+                        label="HAS_VULNERABILITY"
+                    ))
+            
+            # Extract Code Example node
+            code_example = record.get('codeExample') or {}
+            code_node_id = code_example.get('id')
+            if code_node_id and code_node_id not in node_ids:
+                node_ids.add(code_node_id)
+                
+                nodes.append(GraphNode(
+                    id=code_node_id,
+                    label=f"Code Example {code_node_id}",
+                    type="CODE_EXAMPLE",
+                    size=6.0,
+                    color="#aa6600",
+                    properties={
+                        "code_before": code_example.get('code_before', ''),
+                        "code_after": code_example.get('code_after', ''),
+                        "related_cve": cve_node_id
+                    }
+                ))
+                
+                # Add edge from CVE to Code Example
+                if cve_node_id:
+                    edges.append(GraphEdge(
+                        id=f"{cve_node_id}_to_{code_node_id}",
+                        source=cve_node_id,
+                        target=code_node_id,
+                        type="HAS_CODE_EXAMPLE",
+                        weight=1.0,
+                        label="HAS_CODE_EXAMPLE"
+                    ))
+        
+        # Add CWE-to-CWE relationship edges based on MetaPath traversal
+        center_cwe_id = cwe_id
+        for item in raw_results:
+            record = item.get('result', {})
+            related_cwe = record.get('cwe', {})
+            related_cwe_id = related_cwe.get('id')
+            path_type = record.get('pathType', 'unknown')
+            
+            # Skip center node and ensure both nodes exist
+            if (related_cwe_id and related_cwe_id != center_cwe_id and 
+                related_cwe_id in node_ids and center_cwe_id in node_ids):
+                
+                # Create edge based on path type with appropriate relationship
+                edge_type_map = {
+                    'direct': 'DIRECT_RELATION',
+                    'peer': 'PEER_WITH',
+                    'parent': 'HAS_PARENT',
+                    'related': 'RELATES_TO'
+                }
+                
+                edge_type = edge_type_map.get(path_type, 'METAPATH_RELATION')
+                edge_id = f"{center_cwe_id}_to_{related_cwe_id}_{path_type}"
+                
+                if not any(edge.id == edge_id for edge in edges):  # Avoid duplicates
+                    edges.append(GraphEdge(
+                        id=edge_id,
+                        source=center_cwe_id,
+                        target=related_cwe_id,
+                        type=edge_type,
+                        weight=record.get('score', 0.5),
+                        label=f"{path_type.title()} Path"
+                    ))
+        
+        graph_data = GraphVisualizationData(
+            nodes=nodes,
+            edges=edges,
+            metadata={
+                "center_node": cwe_id,
+                "query_type": "metapath_graph",
+                "total_nodes": len(nodes),
+                "total_edges": len(edges)
+            }
+        )
+        
+        return graph_data.model_dump()

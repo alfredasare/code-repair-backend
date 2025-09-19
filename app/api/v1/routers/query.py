@@ -40,6 +40,20 @@ async def query_pattern(
             **request.additional_params
         )
         
+        # If this is a graph pattern, add D3 visualization data
+        if "graph" in request.pattern_id and hasattr(handler, 'get_graph_data'):
+            try:
+                graph_data = handler.get_graph_data(
+                    cwe_id=request.cwe_id,
+                    cve_id=request.cve_id,
+                    graph_data_source_id=graph_data_source_id,
+                    **request.additional_params
+                )
+                results["graph_visualization"] = graph_data
+            except Exception as e:
+                print(f"Failed to generate graph data: {e}")
+                results["graph_visualization_error"] = str(e)
+        
         return QueryResponse(
             pattern_id=request.pattern_id,
             results=results or {},
