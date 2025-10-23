@@ -24,6 +24,7 @@ class AssessmentResponse(BaseModel):
     id: str
     user_id: str
     evaluation_scores: Dict[str, Any] = Field(..., description="The evaluation scores to store")
+    evaluation_reasons: Optional[Dict[str, str]] = Field(None, description="The reasoning behind each evaluation score")
     recommendation: str = Field(..., description="The repair recommendation")
     vulnerable_code: str = Field(..., description="The vulnerable code")
     fixed_code: str = Field(..., description="The fixed code")
@@ -90,11 +91,13 @@ class EvaluationScoresResponse(BaseModel):
     cve_id: str
     cwe_id: str
     scores: Dict[str, float]
+    reasons: Dict[str, str] = Field(default_factory=dict, description="The reasoning behind each evaluation score")
 
 
 # Store Results Models
 class StoreResultsRequest(BaseModel):
     scores: Dict[str, Any] = Field(..., description="The evaluation scores to store")
+    reasons: Optional[Dict[str, str]] = Field(None, description="The reasoning behind each evaluation score")
     recommendation: str = Field(..., description="The repair recommendation")
     vulnerable_code: str = Field(..., description="The vulnerable code")
     fixed_code: str = Field(..., description="The fixed code")

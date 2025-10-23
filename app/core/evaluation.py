@@ -44,10 +44,10 @@ def evaluate_recommendation(
     recommendation: str,
     retrieved_context: str,
     model: str = "gpt-4o"
-) -> Dict[str, float]:
+) -> Dict[str, any]:
     """
     Evaluate a code repair recommendation using deepeval.
-    
+
     Args:
         vulnerable_code: The vulnerable code
         cwe_id: The CWE identifier
@@ -55,21 +55,22 @@ def evaluate_recommendation(
         recommendation: The recommendation to evaluate
         retrieved_context: The context retrieved from pattern matching
         model: The model to use for evaluation
-        
+
     Returns:
-        Dictionary containing scores for each criterion
+        Dictionary containing 'scores' and 'reasons' for each criterion
     """
     code_snippet = f"""
     Code Before Fix:
     {vulnerable_code}
     """
-    
+
     # Create input text
     input_text = create_input_text(cwe_id, cve_id, code_snippet)
-    
+
     # Store results
     scores = {}
-    
+    reasons = {}
+
     # Get criteria from storage and evaluate against each rubric
     rubrics = get_criteria_as_rubrics()
 
@@ -79,17 +80,22 @@ def evaluate_recommendation(
             model=model,
             evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.CONTEXT]
         )
-        
+
         test_case = LLMTestCase(
             input=input_text,
             actual_output=recommendation,
             context=[retrieved_context]
         )
-        
+
         # Measure the test case
         g_eval.measure(test_case)
-        
-        # Store the score
-        scores[f"{rubric['name']} Score"] = float(g_eval.score)
-    
-    return scores
+
+        # Store the score and reason
+        score_key = f"{rubric['name']} Score"
+        scores[score_key] = float(g_eval.score)
+        reasons[score_key] = g_eval.reason if hasattr(g_eval, 'reason') and g_eval.reason else ""
+
+    return {
+        "scores": scores,
+        "reasons": reasons
+    }

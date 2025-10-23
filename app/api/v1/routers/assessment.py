@@ -239,11 +239,11 @@ async def evaluate_code_fix(
     try:
         import asyncio
         import concurrent.futures
-        
+
         # Run evaluation in a thread pool to avoid event loop conflicts
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            scores = await loop.run_in_executor(
+            result = await loop.run_in_executor(
                 executor,
                 evaluate_recommendation,
                 request.vulnerable_code,
@@ -253,15 +253,20 @@ async def evaluate_code_fix(
                 request.retrieved_context,
                 request.model
             )
-        
+
+        # Extract scores and reasons from the result
+        scores = result.get("scores", {})
+        reasons = result.get("reasons", {})
+
         return EvaluationScoresResponse(
             recommendation=request.recommendation,
             vulnerable_code=request.vulnerable_code,
             cve_id=request.cve_id,
             cwe_id=request.cwe_id,
-            scores=scores
+            scores=scores,
+            reasons=reasons
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -288,24 +293,30 @@ async def store_assessment_results(
             "pattern_id": request.pattern_id,
             "evaluation_scores": request.scores,
         }
-        
+
+        # Add evaluation reasons if provided
+        if request.reasons:
+            assessment_data["evaluation_reasons"] = request.reasons
+
         # Add graph visualization if provided
         if request.graph_visualization:
             assessment_data["graph_visualization"] = request.graph_visualization
-        
+
         # Store in MongoDB
         assessment_id = assessment_storage.create(assessment_data)
 
         # Prepare stored fields list
         stored_fields = ["user_id", "cwe_id", "cve_id", "vulnerable_code", "recommendation", "model_id", "pattern_id", "evaluation_scores", "fixed_code"]
-        
+        if request.reasons:
+            stored_fields.append("evaluation_reasons")
+
         return StoreResultsResponse(
             assessment_id=assessment_id,
             stored_fields=stored_fields,
             message="Assessment results stored successfully",
             stored_at=datetime.now()
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
