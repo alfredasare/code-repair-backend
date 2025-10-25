@@ -70,31 +70,30 @@ class KnnGraphHandler(QueryHandler):
             WITH targetCwe, minHops, shortestPathTypes, $alpha ^ minHops AS score
 
             // Check if this targetCwe (reached via shortest path) has the required CVE -> Example chain
+            // This expands to ALL CVE/Example combinations for each targetCwe
             OPTIONAL MATCH (targetCwe)-[:HAS_VULNERABILITY]->(cve:CVE)-[:HAS_CODE_EXAMPLE]->(ex:CODE_EXAMPLE)
 
             // Keep only those targetCwes that have the full chain
             WHERE cve IS NOT NULL AND ex IS NOT NULL
 
-            // Select ONE representative CVE/Example pair per targetCwe
-            // Prioritize the specific CVE if it matches, otherwise pick deterministically
-            WITH targetCwe, minHops, shortestPathTypes, score, cve, ex
-            ORDER BY CASE WHEN cve.id = $cveId THEN 0 ELSE 1 END, cve.id, ex.id
-            WITH targetCwe, minHops, shortestPathTypes, score, head(collect({cve: cve, example: ex})) AS selectedPair
+            // Order results to prioritize:
+            // 1. Higher scores (better CWEs based on proximity via minHops)
+            // 2. Matching CVE if specified (when $cveId is provided)
+            // 3. Deterministic ordering for stability
+            ORDER BY score DESC, CASE WHEN cve.id = $cveId THEN 0 ELSE 1 END, targetCwe.id ASC, cve.id ASC, ex.id ASC
 
-            // Order results primarily by the calculated score (DESCENDING - higher score is better)
-            ORDER BY score DESC, targetCwe.id ASC // Secondary sort for stability
-
-            // Limit to the desired number of top results
+            // Limit to the desired number of top CHAINS (each CWE-CVE-Example is one chain)
             LIMIT $topK
 
-            // --- Add Rank (based on the score ordering) ---
-            // Collect the ordered & limited results into a list, including the shortest path types
+            // --- Add Rank (based on the ordering) ---
+            // Collect the ordered & limited results into a list
             WITH collect({
                 targetCwe: targetCwe,
-                selectedPair: selectedPair,
+                cve: cve,
+                example: ex,
                 hops: minHops,
                 score: score,
-                relationTypes: shortestPathTypes // Include the types here
+                relationTypes: shortestPathTypes
             }) AS orderedResults
 
             // Unwind the list using an index (0-based)
@@ -105,11 +104,11 @@ class KnnGraphHandler(QueryHandler):
 
             // --- Format Final Output ---
             RETURN {
-                rank: rank, // The final rank (1, 2, 3...) based on score
+                rank: rank, // The final rank (1, 2, 3...) based on score and ordering
                 score: item.score, // The calculated hop-decayed score
                 cwe: properties(item.targetCwe),
-                cve: properties(item.selectedPair.cve),
-                codeExample: properties(item.selectedPair.example),
+                cve: properties(item.cve),
+                codeExample: properties(item.example),
                 hops: item.hops, // The minimum hops used to calculate the score
                 relationTypes: item.relationTypes // List of relationship types in the shortest path
             } AS result
